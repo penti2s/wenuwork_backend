@@ -35,6 +35,27 @@ app.post('/register', async (req, res) => {
     }
 })
 
+app.post('/login', async (req, res) => {
+    const { body } = req;
+    try{
+        const usuario = await User.findOne({ email: body.email });
+        if (usuario) {
+            const isMatch = await bcryppt.compare(body.password, usuario.password);
+            if (isMatch) {
+                const tokenFirmado = firmaDeToken(usuario._id);
+                res.status(200).send(tokenFirmado);
+            } else {
+                res.status(400).send({ message: 'Usuario o contraseña incorrectos' });
+            }
+        } else {
+            res.status(400).send({ message: 'Usuario o contraseña incorrectos' });
+        }
+    }catch (error) {
+        console.log(error);
+        res.status(500).send(error.message);
+    }
+});
+
 app.listen(3000, ()=>{
     console.log('Server on port 3000');
 })
