@@ -12,6 +12,9 @@ const app = express();
 
 app.use(express.json());
 
+const firmaDeToken = _id => jwt.sign({ _id }, process.env.JWT_SECRET);
+
+
 app.post('/register', async (req, res) => {
     const { body } = req;
     try {
@@ -22,9 +25,8 @@ app.post('/register', async (req, res) => {
             const salt = await bcryppt.genSalt();
             const hashed = await bcryppt.hash(body.password, salt);
             const userCreated = await User.create({ email: body.email, password: hashed, salt });
-            jwt.sign({ _id: userCreated._id }, process.env.JWT_SECRET)
-
-            res.send({ _id: userCreated._id })
+            const tokenFirmado = firmaDeToken(userCreated._id);
+            res.status(200).send(tokenFirmado)
         }
 
     } catch (error) {
