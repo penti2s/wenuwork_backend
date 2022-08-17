@@ -8,6 +8,8 @@ const Personajes = require('./Models/favPersonajes');
 const passport = require('passport');
 const ExtractJWT = require('passport-jwt').ExtractJwt;
 const JWTstrategy = require('passport-jwt').Strategy;
+const cors = require('cors');
+const { json } = require('express');
 
 require('dotenv').config();
 
@@ -15,26 +17,24 @@ mongoose.connect(process.env.URL_DB)
 
 const app = express();
 
-app.use(express.json());
+app.use(cors(), express.json());
 
 const firmaDeToken = _id => jwt.sign({ _id }, process.env.JWT_SECRET);
 
 passport.use(
-    new JWTstrategy(
-        {
-            secretOrKey: process.env.JWT_SECRET,
-            jwtFromRequest: ExtractJWT.fromAuthHeaderAsBearerToken(),
-            algorithms: ['HS256']
-        },
-        async (token, done) => {
-            try {
-                return await done(token._id);
-            } catch (error) {
-                done(error);
-            }
+    new JWTstrategy({
+        jwtFromRequest: ExtractJWT.fromAuthHeaderAsBearerToken(),
+        secretOrKey: process.env.JWT_SECRET,
+    }, async function (payload, done) {
+        try {
+            return done(null, payload)
+        } catch (err) {
+            return done(new Error(), false)
         }
-    )
+    }),
 );
+
+
 
 app.post('/register', async (req, res) => {
     const { body } = req;
@@ -47,7 +47,7 @@ app.post('/register', async (req, res) => {
             const hashed = await bcryppt.hash(body.password, salt);
             const userCreated = await User.create({ email: body.email, password: hashed, salt });
             const tokenFirmado = firmaDeToken(userCreated._id);
-            res.status(200).send(tokenFirmado)
+            res.status(200).send(JSON.stringify({ token: tokenFirmado }))
         }
 
     } catch (error) {
@@ -58,14 +58,15 @@ app.post('/register', async (req, res) => {
 
 app.post('/login', async (req, res) => {
     const { body } = req;
+    console.log(body)
     try {
         const usuario = await User.findOne({ email: body.email });
         if (usuario) {
             const isMatch = await bcryppt.compare(body.password, usuario.password);
             if (isMatch) {
                 const tokenFirmado = firmaDeToken(usuario._id);
-                console.log('login')
-                res.status(200).send(tokenFirmado);
+                res.status(200).send(JSON.stringify({ token: tokenFirmado }));
+
             } else {
                 res.status(400).send({ message: 'Usuario o contraseña incorrectos' });
             }
@@ -73,36 +74,60 @@ app.post('/login', async (req, res) => {
             res.status(400).send({ message: 'Usuario o contraseña incorrectos' });
         }
     } catch (error) {
-        console.log(error);
-        res.status(500).send(error.message);
+        res.status(500).send(error);
+    }
+});
+const isAuthenticated = (req, res, next) => {
+    passport.authenticate('jwt', function (err, user) {
+        if (err || !user) {
+            res.status(400).send('No tienes permiso para entrar a esta ruta');
+        } else {
+            req.user = user._id;
+            next();
+        }
+    })(req, res, next)}
+//create middleware con passport-jwt y passport
+app.post('/save', isAuthenticated, async (req, res) => {
+    const { body } = req;
+    const userSearch = await Personajes.findOne({ id_user: req.user });
+    if (userSearch) {
+        const { id_personaje } = userSearch
+        if(body.new_id_personaje){
+            id_personaje.push(body.new_id_personaje);
+            await Personajes.findOneAndUpdate({ id_user: req.user },  { id_personaje: id_personaje} )
+            res.status(200).send(JSON.stringify({ message: 'Personaje agregado a favoritos' }));
+        }else{
+            res.status(400).send(JSON.stringify({ message: 'Faltan parametros para agregar personajes' }));
+        }
+    }else{
+        await Personajes.create({ id_user: req.user, id_personaje: [body.new_id_personaje] })
+        res.status(200).send(JSON.stringify({ message: 'Personaje agregado a favoritos' }));
     }
 });
 
-//create middleware con passport-jwt y passport
-app.get('/save', (req, res, next) => {
-    passport.authenticate("jwt", { session: false }, (payload) => {
-        req.userToken = payload;
-        next();
-    })(req, res, next);
-}, async (req, res) => { 
-    // Guardar favoritos
-    const { body, userToken } = req
-    const agregarPersonajeFav = await Personajes.create({ id_user: userToken, id_personaje: body.id_personaje })
-    //res.status(200).send(agregarPersonajeFav)
-    res.send('test')
-})
+app.get('/allsaveCharacter', isAuthenticated, async (req, res) => {
+    const userSearch = await Personajes.findOne({ id_user: req.user });
+    if (userSearch) {
+        const { id_personaje } = userSearch
+        res.status(200).send(JSON.stringify(id_personaje));
+    }else{
+        res.status(200).send(JSON.stringify({ message: 'No tienes personajes guardados'}));
+    }
+});
 
 
 app.get('/allpersonajes', (req, res) => {
     axios.get('https://rickandmortyapi.com/api/character')
-    .then((response) => {
-        res.status(200).json(response.data.results)
-    })
-    .catch((error) => {
-        console.log('sadsa')
-        console.log(error);
-    })
+        .then((response) => {
+            res.status(200).json(response.data.results)
+        })
+        .catch((error) => {
+            console.log('sadsa')
+            console.log(error);
+        })
 })
+
+
 
 app.listen(process.env.PORT || 3000, () => {
     console.log('Server on port 3000');
