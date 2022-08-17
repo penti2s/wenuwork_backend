@@ -9,7 +9,8 @@ const passport = require('passport');
 const ExtractJWT = require('passport-jwt').ExtractJwt;
 const JWTstrategy = require('passport-jwt').Strategy;
 const cors = require('cors');
-const { json } = require('express');
+
+let regex = /^[a-z0-9]+@[a-z]+\.[a-z]{2,3}$/
 
 require('dotenv').config();
 
@@ -40,14 +41,18 @@ app.post('/register', async (req, res) => {
     const { body } = req;
     try {
         const usuario = await User.findOne({ email: body.email });
-        if (usuario) {
+        if (usuario ) {
             res.status(400).send({ message: 'El usuario ya existe' });
         } else {
-            const salt = await bcryppt.genSalt();
-            const hashed = await bcryppt.hash(body.password, salt);
-            const userCreated = await User.create({ email: body.email, password: hashed, salt });
-            const tokenFirmado = firmaDeToken(userCreated._id);
-            res.status(200).send(JSON.stringify({ token: tokenFirmado }))
+            if(regex.test(body.email)){
+                const salt = await bcryppt.genSalt();
+                const hashed = await bcryppt.hash(body.password, salt);
+                const userCreated = await User.create({ email: body.email, password: hashed, salt });
+                const tokenFirmado = firmaDeToken(userCreated._id);
+                res.status(200).send(JSON.stringify({ token: tokenFirmado }))
+            }else{
+                res.status(400).send({message: 'El email no es valido'})
+            }
         }
 
     } catch (error) {
@@ -58,7 +63,6 @@ app.post('/register', async (req, res) => {
 
 app.post('/login', async (req, res) => {
     const { body } = req;
-    console.log(body)
     try {
         const usuario = await User.findOne({ email: body.email });
         if (usuario) {
@@ -122,7 +126,6 @@ app.get('/allpersonajes', (req, res) => {
             res.status(200).json(response.data.results)
         })
         .catch((error) => {
-            console.log('sadsa')
             console.log(error);
         })
 })
